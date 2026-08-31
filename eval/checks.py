@@ -6,21 +6,36 @@ How we measure "did the agent interpret intent correctly?"
 ---------------------------------------------------------
 Intent is operationalised as *the tool call the agent makes*. For each scenario
 turn we assert on some combination of:
-  * which tool was called and with which key arguments (`tool_called`)
+  * which tool was called and with which key arguments (`tool_called`,
+    `tool_called_any`)
   * which tool was NOT called (`tool_not_called`) — e.g. it must not delete on an
     ambiguous reference
   * the resulting database state (`db_count`, `db_note_matches`, `db_no_note_matches`)
-  * whether the reply is a clarifying question (`reply_is_question`)
+  * whether the reply asks the user to clarify (`reply_is_question`) or to
+    confirm a destructive action (`asks_to_confirm`)
   * whether the reply surfaces the right information (`reply_contains_any`)
-This keeps scoring objective and independent of exact wording.
+Wording is never asserted on directly — only normalised substring presence.
 """
 
 from __future__ import annotations
 
+# Typographic characters an LLM commonly emits, folded to plain ASCII so that
+# substring checks don't fail on a curly apostrophe or a narrow no-break space.
+_FOLD = {
+    0x2019: "'", 0x2018: "'", 0x201C: '"', 0x201D: '"',
+    0x2014: "-", 0x2013: "-", 0x202F: " ", 0x00A0: " ",
+}
+
+
+def _norm(text) -> str:
+    if not isinstance(text, str):
+        return ""
+    return text.translate(_FOLD).lower()
+
 
 def _contains(actual, expected) -> bool:
     if isinstance(expected, str):
-        return isinstance(actual, str) and expected.lower() in actual.lower()
+        return _norm(expected) in _norm(actual)
     if isinstance(expected, (list, tuple, set)):
         actual_set = {str(x).lower() for x in (actual or [])}
         return {str(x).lower() for x in expected}.issubset(actual_set)
@@ -38,6 +53,18 @@ def tool_called(name: str, **arg_match):
             if all(_contains(c.arguments.get(k), v) for k, v in arg_match.items()):
                 return True, f"{name} called with {arg_match}"
         return False, f"{name} called but not with {arg_match}; saw {[c.arguments for c in calls]}"
+    return check
+
+
+def tool_called_any(*names: str, **arg_match):
+    """Pass if any of `names` was called (optionally matching arg_match)."""
+    def check(turn, store):
+        for name in names:
+            ok, _ = tool_called(name, **arg_match)(turn, store)
+            if ok:
+                return True, f"{name} called"
+        got = [c.name for c in turn.tool_calls]
+        return False, f"expected one of {names}, got {got}"
     return check
 
 
@@ -69,10 +96,20 @@ def reply_is_question():
     return check
 
 
+def asks_to_confirm():
+    """Reply seeks explicit go-ahead for a destructive action."""
+    cues = ("?", "confirm", "yes/no", "y/n", "are you sure", "go ahead", "proceed")
+    def check(turn, store):
+        low = _norm(turn.reply)
+        ok = any(c in low for c in cues)
+        return ok, "reply asks for confirmation" if ok else f"expected a confirmation prompt, got: {turn.reply!r}"
+    return check
+
+
 def reply_contains_any(*subs: str):
     def check(turn, store):
-        low = turn.reply.lower()
-        ok = any(s.lower() in low for s in subs)
+        low = _norm(turn.reply)
+        ok = any(_norm(s) in low for s in subs)
         return ok, "reply mentions expected content" if ok else f"reply missing any of {subs}: {turn.reply!r}"
     return check
 

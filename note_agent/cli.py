@@ -21,6 +21,14 @@ Type your message and press Enter. Commands: /notes  /reset  /quit
 
 
 def main(argv=None) -> int:
+    # LLMs emit smart quotes / narrow spaces; the Windows console is cp1252 by
+    # default and would crash on them. Fall back to replacement chars instead.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     load_dotenv()
     parser = argparse.ArgumentParser(description="Chat with your note-taking agent.")
     parser.add_argument("--user", default="default", help="user id for note scoping")

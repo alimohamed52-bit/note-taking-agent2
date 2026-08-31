@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 import time
 import traceback
@@ -77,6 +78,12 @@ def run_scenario(scn, llm) -> dict:
 
 
 def main(argv=None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     load_dotenv()
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=None)

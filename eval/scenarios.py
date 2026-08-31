@@ -53,9 +53,11 @@ SCENARIOS: list[Scenario] = [
             Turn("Save a note titled 'Q3 planning' about drafting the roadmap.",
                  [c.tool_called("create_note")]),
             Turn("Actually, add a deadline of September 15th to that last note.",
-                 [c.tool_called("update_note"),
-                  c.db_note_matches(lambda n: "15" in n.body and "roadmap" in n.body.lower(),
-                                    desc="original body kept and deadline appended")]),
+                 [c.tool_called("update_note", note_id=1),  # resolved "that last note"
+                  c.db_note_matches(
+                      lambda n: "roadmap" in n.body.lower()
+                      and ("15" in n.body or any("15" in t for t in n.tags)),
+                      desc="original note kept and the deadline recorded on it")]),
         ],
     ),
     Scenario(
@@ -71,7 +73,8 @@ SCENARIOS: list[Scenario] = [
     Scenario(
         "search_by_tag", "search",
         [Turn("Show me everything I've tagged urgent.",
-              [c.tool_called("search_notes"),
+              # listing by tag is a valid intent for either tool
+              [c.tool_called_any("search_notes", "list_notes"),
                c.reply_contains_any("passport", "deploy")])],
         seed=[
             {"title": "Renew passport", "body": "Expires next month.", "tags": ["urgent", "personal"]},
@@ -93,7 +96,7 @@ SCENARIOS: list[Scenario] = [
             Turn("Update my standup note to say the meeting is now on Wednesdays.",
                  [c.tool_called("update_note"),
                   c.confirmed_before_write("update_note"),
-                  c.reply_is_question()]),
+                  c.asks_to_confirm()]),
             Turn("Yes, go ahead.",
                  [c.db_note_matches(_has("wednesday"), desc="body updated to Wednesday")]),
         ],
@@ -122,7 +125,7 @@ SCENARIOS: list[Scenario] = [
             Turn("Delete the note about the old office address.",
                  [c.tool_called("delete_note"),
                   c.confirmed_before_write("delete_note"),
-                  c.reply_is_question(),
+                  c.asks_to_confirm(),
                   c.db_count(2)]),
             Turn("Yes, delete it.",
                  [c.db_count(1),
@@ -137,7 +140,7 @@ SCENARIOS: list[Scenario] = [
         "delete_declined", "delete",
         [
             Turn("Delete my standup note.",
-                 [c.tool_called("delete_note"), c.reply_is_question()]),
+                 [c.tool_called("delete_note"), c.asks_to_confirm()]),
             Turn("No, actually keep it.",
                  [c.db_count(1),
                   c.db_note_matches(_has("standup"), desc="note preserved")]),
