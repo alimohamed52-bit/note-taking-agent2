@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"  # solid tool-use support on Groq
+DEFAULT_MODEL = "openai/gpt-oss-120b"  # strong tool-use support on Groq
 
 
 class GroqLLM:

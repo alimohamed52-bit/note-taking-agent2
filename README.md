@@ -43,7 +43,7 @@ cp .env.example .env        # then edit .env and add your GROQ_API_KEY
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `GROQ_API_KEY` | **yes** | — | Groq API key (get one at <https://console.groq.com>). |
-| `GROQ_MODEL` | no | `llama-3.3-70b-versatile` | Any Groq model with tool-calling support. |
+| `GROQ_MODEL` | no | `openai/gpt-oss-120b` | Any Groq model with tool-calling support. |
 
 The `.env` file is loaded automatically.
 
@@ -55,7 +55,7 @@ The `.env` file is loaded automatically.
 
 ```bash
 python -m note_agent.cli
-# options: --user alice   --db mynotes.db   --model llama-3.3-70b-versatile
+# options: --user alice   --db mynotes.db   --model openai/gpt-oss-120b
 ```
 
 In-chat commands: `/notes` (list), `/reset` (new conversation), `/quit`.
@@ -151,9 +151,11 @@ table; see [`note_agent/storage.py`](note_agent/storage.py).
 ### LLM: Groq
 
 Chosen for speed and free-tier access. The default model
-`llama-3.3-70b-versatile` has reliable tool-calling. Per the brief, the model
-choice isn't the point — the integration is isolated in
-[`note_agent/llm.py`](note_agent/llm.py).
+`openai/gpt-oss-120b` has reliable tool-calling. Groq's model catalogue changes
+often and varies by account — run `python -m note_agent.list_models` (or check
+<https://console.groq.com/docs/models>) and set `GROQ_MODEL` to any chat model
+your key can see. Per the brief, the model choice isn't the point — the
+integration is isolated in [`note_agent/llm.py`](note_agent/llm.py).
 
 ### Bonus: semantic search
 
