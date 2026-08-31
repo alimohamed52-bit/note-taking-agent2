@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from .llm import GroqLLM
 from .storage import NoteStore
@@ -18,13 +18,21 @@ from .tools import TOOL_SCHEMAS, ToolExecutor
 MAX_TOOL_ITERATIONS = 6  # guard against loops
 
 SYSTEM_PROMPT = """You are a note-taking assistant. The user manages personal \
-notes entirely by chatting with you. Today's date is {today}.
+notes entirely by chatting with you.
+
+{date_context}
 
 You have tools: create_note, search_notes, get_note, list_notes, update_note, \
 delete_note. Always use a tool to read or change notes — never invent note \
 contents or ids.
 
 Rules:
+0. TITLE & TAGS. When creating a note, always infer a short descriptive title \
+from what the user said. Also infer 1-3 concise lowercase tags (e.g. work, \
+meetings, travel, finance, personal) from the content — but if any of these \
+existing tags fit, reuse them instead of coining a new one: {known_tags}. If the \
+user names tags explicitly, use exactly those. Always tell the user which title \
+and tags you chose so they can correct them.
 1. DISAMBIGUATION. Before updating or deleting a note that the user referred to \
 by description, call search_notes. If more than one note plausibly matches, list \
 the candidates and ask which one — do NOT guess.
@@ -33,8 +41,9 @@ replacing the body, removing tags), requires explicit user confirmation. The \
 tool will return status "confirmation_required" with a preview; relay it, wait \
 for a clear yes, then call the tool again with confirm=true. If the user \
 declines, drop it and confirm nothing changed.
-3. DATES. Convert relative dates ("last week", "yesterday") to YYYY-MM-DD using \
-today's date before calling search_notes.
+3. DATES. Never compute weekdays or date arithmetic yourself — you get it wrong. \
+Use ONLY the calendar above to turn "Tuesday" / "next week" / "yesterday" into a \
+YYYY-MM-DD date, for both note bodies and search_notes filters.
 4. FOLLOW-UPS. Resolve references like "that note" / "the second one" from the \
 conversation so far. Deadlines, dates, and extra details go in the note body \
 (use append_body) unless the user explicitly says "tag".
@@ -43,6 +52,23 @@ alternative (broaden the query, try a different tag, list all notes).
 6. Be concise and conversational. Confirm what you did, including the note id.
 7. For summarise / compare / contradiction questions, call search_notes with \
 include_body=true and reason over the returned notes."""
+
+
+def _date_context() -> str:
+    """A small explicit calendar so the model never does weekday math itself."""
+    today = date.today()
+    lines = [
+        f"Today is {today:%A}, {today.isoformat()}.",
+        f"Yesterday was {today - timedelta(days=1):%A}, {(today - timedelta(days=1)).isoformat()}.",
+        f"One week ago was {(today - timedelta(days=7)).isoformat()}.",
+        "The next 7 days (use these for a bare weekday name like \"Tuesday\"):",
+    ]
+    for i in range(1, 8):
+        d = today + timedelta(days=i)
+        lines.append(f"  {d:%A} = {d.isoformat()}")
+    lines.append('"next <weekday>" means the following week\'s occurrence '
+                 '(add 7 days to the one listed above).')
+    return "\n".join(lines)
 
 
 @dataclass
@@ -66,9 +92,12 @@ class NoteAgent:
                  user_id: str = "default"):
         self.executor = ToolExecutor(store, user_id)
         self.llm = llm or GroqLLM()
-        self.messages: list[dict] = [
-            {"role": "system", "content": SYSTEM_PROMPT.format(today=date.today().isoformat())}
-        ]
+        known = store.all_tags(user_id)
+        prompt = SYSTEM_PROMPT.format(
+            date_context=_date_context(),
+            known_tags=", ".join(known) if known else "(none yet)",
+        )
+        self.messages: list[dict] = [{"role": "system", "content": prompt}]
 
     def send(self, user_text: str) -> AgentTurn:
         self.messages.append({"role": "user", "content": user_text})
