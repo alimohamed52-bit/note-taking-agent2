@@ -1,0 +1,81 @@
+"""Command-line chat loop.
+
+    python -m note_agent.cli [--user NAME] [--db PATH]
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from dotenv import load_dotenv
+
+from .agent import NoteAgent
+from .llm import GroqLLM
+from .storage import NoteStore
+
+BANNER = """\
+Conversational Note-Taking Agent
+Type your message and press Enter. Commands: /notes  /reset  /quit
+"""
+
+
+def main(argv=None) -> int:
+    load_dotenv()
+    parser = argparse.ArgumentParser(description="Chat with your note-taking agent.")
+    parser.add_argument("--user", default="default", help="user id for note scoping")
+    parser.add_argument("--db", default="notes.db", help="path to the SQLite database")
+    parser.add_argument("--model", default=None, help="override the Groq model id")
+    args = parser.parse_args(argv)
+
+    store = NoteStore(args.db)
+    try:
+        llm = GroqLLM(model=args.model)
+    except RuntimeError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    agent = NoteAgent(store, llm=llm, user_id=args.user)
+    print(BANNER)
+
+    while True:
+        try:
+            text = input("you › ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        if not text:
+            continue
+        if text in ("/quit", "/exit"):
+            break
+        if text == "/reset":
+            agent = NoteAgent(store, llm=llm, user_id=args.user)
+            print("(conversation reset)\n")
+            continue
+        if text == "/notes":
+            for n in store.all_notes(args.user):
+                print(f"  [{n.id}] {n.title}  {', '.join('#' + t for t in n.tags)}")
+            print()
+            continue
+
+        try:
+            turn = agent.send(text)
+        except Exception as exc:  # network/API errors shouldn't kill the session
+            print(f"agent › (error: {exc})\n")
+            continue
+
+        for tc in turn.tool_calls:
+            print(f"      · {tc.name}({_fmt_args(tc.arguments)}) -> {tc.result.get('status')}")
+        print(f"agent › {turn.reply}\n")
+
+    store.close()
+    return 0
+
+
+def _fmt_args(args: dict) -> str:
+    return ", ".join(f"{k}={v!r}" for k, v in args.items())
+
+
+if __name__ == "__main__":
+    sys.exit(main())
