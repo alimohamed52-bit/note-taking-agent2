@@ -71,17 +71,17 @@ streamlit run streamlit_app.py
 Opens a browser chat window. The sidebar shows your notes live and lets you
 switch user id / database file. Same agent as the CLI — this file is only UI.
 
-### Notes website (Flask)
+### Web app (Flask) — chat + live notes panel
 
 ```bash
 python -m note_agent.web
 # options: --db demo.db  --user alice  --host 0.0.0.0  --port 8000
 ```
 
-A read-only browser view of the stored notes at <http://127.0.0.1:5000> —
-list, full-text/semantic search (`?q=`), tag filter (`?tag=`), a page per note
-(`/note/<id>`), and a JSON feed at `/api/notes`. Reads the same SQLite database;
-creating and editing notes stays with the agent.
+Then open **<http://127.0.0.1:5000>**. Chat with the agent in the browser with a
+notes panel that updates after every turn. Also serves a per-note page
+(`/note/<id>`) and a JSON feed (`/api/notes`). Same `NoteAgent` as the CLI; one
+conversation per server process, "Reset" starts a new one.
 
 ---
 
@@ -132,7 +132,7 @@ note_agent/
   llm.py         Groq chat wrapper (provider-agnostic seam)
   agent.py       message history + tool-calling loop + system prompt
   cli.py         terminal chat loop
-  web.py         read-only Flask website for browsing notes
+  web.py         Flask web app: browser chat + live notes panel
 streamlit_app.py web chat UI
 eval/            scenario suite + runner + report
 tests/           offline unit tests

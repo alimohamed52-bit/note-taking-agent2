@@ -96,7 +96,10 @@ class Note:
 class NoteStore:
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
-        self._conn = sqlite3.connect(db_path)
+        # check_same_thread=False: the Flask dev server may touch the store from
+        # a worker thread. All web access is serialised behind a lock in web.py,
+        # and the CLI / Streamlit are single-threaded, so this stays safe.
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
