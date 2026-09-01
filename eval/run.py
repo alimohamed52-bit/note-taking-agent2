@@ -64,12 +64,19 @@ def run_scenario(scn, llm) -> dict:
         except OSError:
             pass
 
+    # A rate-limit / quota error is an environment problem, not a scenario
+    # failure — report it separately so it doesn't look like a regression.
+    skipped = bool(error) and ("RateLimited" in error or "rate_limit" in error
+                               or "RateLimitError" in error)
+
     all_checks = [ch for tr in turn_results for ch in tr["checks"]]
-    passed = bool(all_checks) and all(ch["passed"] for ch in all_checks) and error is None
+    passed = (bool(all_checks) and all(ch["passed"] for ch in all_checks)
+              and error is None)
     return {
         "name": scn.name,
         "category": scn.category,
         "passed": passed,
+        "skipped": skipped,
         "error": error,
         "turns": turn_results,
         "n_checks": len(all_checks),
@@ -105,9 +112,16 @@ def main(argv=None) -> int:
         t0 = time.time()
         res = run_scenario(scn, llm)
         results.append(res)
-        mark = f"{GREEN}PASS{RESET}" if res["passed"] else f"{RED}FAIL{RESET}"
+        if res["skipped"]:
+            mark = f"{DIM}SKIP{RESET}"
+        elif res["passed"]:
+            mark = f"{GREEN}PASS{RESET}"
+        else:
+            mark = f"{RED}FAIL{RESET}"
         print(f"  {mark}  {scn.name:<32} {res['n_passed']}/{res['n_checks']} checks  {DIM}{time.time()-t0:.1f}s{RESET}")
-        if not res["passed"]:
+        if res["skipped"]:
+            print(f"        {DIM}rate-limited — not counted{RESET}")
+        elif not res["passed"]:
             for tr in res["turns"]:
                 for ch in tr["checks"]:
                     if not ch["passed"]:
@@ -115,22 +129,27 @@ def main(argv=None) -> int:
             if res["error"]:
                 print(f"        {DIM}{res['error'].splitlines()[-1]}{RESET}")
 
-    total = len(results)
-    passed = sum(r["passed"] for r in results)
+    scored = [r for r in results if not r["skipped"]]
+    total = len(scored)
+    passed = sum(r["passed"] for r in scored)
+    skipped = len(results) - total
     by_cat = defaultdict(lambda: [0, 0])
-    for r in results:
+    for r in scored:
         by_cat[r["category"]][0] += r["passed"]
         by_cat[r["category"]][1] += 1
 
     print(f"\n{'='*50}")
-    print(f"Overall: {passed}/{total} scenarios passed ({100*passed/total:.0f}%)")
+    rate = f"{100*passed/total:.0f}%" if total else "n/a"
+    print(f"Overall: {passed}/{total} scenarios passed ({rate})"
+          + (f"  ·  {skipped} skipped (rate-limited)" if skipped else ""))
     print("By category:")
     for cat, (p, n) in sorted(by_cat.items()):
         print(f"  {cat:<18} {p}/{n}")
 
     report = {
         "model": llm.model,
-        "overall": {"passed": passed, "total": total, "rate": passed / total},
+        "overall": {"passed": passed, "total": total,
+                    "rate": (passed / total if total else None), "skipped": skipped},
         "by_category": {k: {"passed": v[0], "total": v[1]} for k, v in by_cat.items()},
         "scenarios": results,
     }

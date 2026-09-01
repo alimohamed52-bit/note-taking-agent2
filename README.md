@@ -87,7 +87,7 @@ conversation per server process, "Reset" starts a new one.
 
 ## Evaluation harness
 
-16 scripted conversational scenarios (happy paths + edge cases) run against a
+17 scripted conversational scenarios (happy paths + edge cases) run against a
 live agent, asserting on **which tool was called with which arguments**, the
 **resulting database state**, and whether the agent **asked for clarification**
 when it should have.
@@ -100,7 +100,13 @@ python -m eval.run --model openai/gpt-oss-120b
 
 Output: a per-scenario PASS/FAIL line, an overall pass rate, a breakdown by
 category (add / search / modify / delete / disambiguation / reasoning /
-multi-turn / error-handling), and a full JSON trace at `eval/report.json`.
+multi-turn / error-handling / cleanup), and a full JSON trace at
+`eval/report.json`.
+
+> The full run is ~40–60 API calls. Groq's free tier has a **200K token/day**
+> cap; if you hit it mid-run those scenarios show `SKIP` (rate-limited, not
+> counted) rather than `FAIL`. Wait for the daily reset, run a subset with
+> `--only`, or switch models with `--model qwen/qwen3.8-27b`.
 
 **How intent is measured.** "Did the agent understand the request?" is
 operationalised as: did it call the *right tool* with the *right key arguments*,
@@ -161,6 +167,7 @@ table; see [`note_agent/storage.py`](note_agent/storage.py).
 | **Graceful errors** | Empty searches return `count: 0`; the prompt requires saying so and suggesting an alternative. Tool exceptions are caught and returned as `status: "error"` so the loop survives. Verified by `search_empty_graceful`. |
 | **Reasoning over notes** | `search_notes(include_body=true)` returns full bodies; the model summarises / compares / finds contradictions. Verified by `summarise_by_tag`, `detect_contradiction`. |
 | **Every note is dated** | `create_note` requires a `date` (stored as `event_date`). No date in the message → the agent asks and does not save yet (`add_no_date_asks`). A date before today is rejected by `tools.py` regardless of the model (`add_rejects_past_date`). The agent resolves relative dates from an explicit calendar in its system prompt, never by computing weekdays itself. |
+| **Past notes auto-expire** | `NoteStore.purge_past_notes()` deletes any note whose `event_date` is before the current date. It runs when the agent starts, at the top of every turn (catches a midnight rollover in a long-lived server), and on every notes-panel refresh. Removed notes are surfaced to the user (CLI line, chat notice, Streamlit toast), not silent. Verified by `autopurge_past_notes` and `test_purge_past_notes`. |
 
 ### LLM: Groq
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import numpy as np
 
@@ -218,6 +218,28 @@ class NoteStore:
         )
         self._conn.commit()
         return cur.rowcount > 0
+
+    def purge_past_notes(self, today: str | None = None) -> list[Note]:
+        """Delete every note whose event_date is strictly before `today`
+        (default: the local current date), across all users. Notes with no
+        event_date are never touched. Returns the notes that were deleted so the
+        caller can report them.
+        """
+        cutoff = today or date.today().isoformat()
+        rows = self._conn.execute(
+            "SELECT * FROM notes WHERE event_date IS NOT NULL AND event_date < ? "
+            "ORDER BY event_date",
+            (cutoff,),
+        ).fetchall()
+        if not rows:
+            return []
+        deleted = [self._row_to_note(r) for r in rows]
+        self._conn.execute(
+            "DELETE FROM notes WHERE event_date IS NOT NULL AND event_date < ?",
+            (cutoff,),
+        )
+        self._conn.commit()
+        return deleted
 
     # ------------------------------------------------------------------- search
     def search(self, query: str | None = None, tags=None, date_from: str | None = None,

@@ -121,6 +121,23 @@ def test_user_isolation():
         store.close(); os.remove(path)
 
 
+def test_purge_past_notes():
+    store, _, path = fresh()
+    try:
+        store.add_note("Stale", event_date=YESTERDAY)
+        store.add_note("Today", event_date=TODAY)
+        store.add_note("Future", event_date=TOMORROW)
+        store.add_note("Undated")  # no event_date -> never purged
+
+        removed = store.purge_past_notes()
+        assert [n.title for n in removed] == ["Stale"]
+        titles = {n.title for n in store.all_notes()}
+        assert titles == {"Today", "Future", "Undated"}
+        assert store.purge_past_notes() == []  # idempotent
+    finally:
+        store.close(); os.remove(path)
+
+
 def test_not_found_paths():
     store, tx, path = fresh()
     try:

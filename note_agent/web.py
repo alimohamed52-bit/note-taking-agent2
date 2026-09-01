@@ -49,6 +49,7 @@ def _get_agent() -> NoteAgent | None:
 def _notes_payload() -> list[dict]:
     store = _store()
     try:
+        store.purge_past_notes()  # keep the panel honest even without a chat turn
         return [
             {"id": n.id, "title": n.title, "tags": n.tags, "body": n.body,
              "event_date": n.event_date,
@@ -179,6 +180,12 @@ async function send(e) {
     thinking.remove();
     if (data.error) { bubble('agent', '⚠️ ' + data.error); }
     else {
+      (data.purged || []).forEach(p => {
+        const d = document.createElement('div');
+        d.className = 'tools';
+        d.textContent = '🗑️ auto-removed past note ' + p;
+        log.appendChild(d);
+      });
       toolLine(data.tool_calls || []);
       bubble('agent', data.reply || '(no reply)');
       renderNotes(data.notes || []);
@@ -231,9 +238,10 @@ def chat():
             {"name": tc.name, "args": tc.arguments, "status": tc.result.get("status")}
             for tc in turn.tool_calls
         ]
+        purged = [f'#{n.id} "{n.title}" ({n.event_date})' for n in turn.purged]
         notes = _notes_payload()
 
-    return jsonify(reply=turn.reply, tool_calls=tool_calls, notes=notes)
+    return jsonify(reply=turn.reply, tool_calls=tool_calls, notes=notes, purged=purged)
 
 
 @app.route("/reset", methods=["POST"])
@@ -253,6 +261,8 @@ def reset():
 def api_notes():
     store = _store()
     try:
+        with _lock:
+            store.purge_past_notes()
         return jsonify(notes=[n.to_dict() for n in store.all_notes(app.config["USER_ID"])])
     finally:
         store.close()

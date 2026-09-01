@@ -25,6 +25,10 @@ human-readable contract.
   past date returns `error`. Enforced in the tool, so the rule holds even if the
   model forgets it. The agent resolves relative dates ("Tuesday", "next week")
   from an explicit calendar injected into its system prompt.
+- **Past notes auto-expire.** `NoteStore.purge_past_notes()` (not a tool — it
+  runs automatically on agent start, every turn, and every panel refresh)
+  deletes notes whose `event_date` has passed. Because notes are always
+  today-or-future and expire on their own, the store never accumulates history.
 
 ## Common return fields
 

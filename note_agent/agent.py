@@ -56,6 +56,10 @@ conversation so far. Deadlines, dates, and extra details go in the note body \
 (use append_body) unless the user explicitly says "tag".
 5. EMPTY RESULTS. If a search returns nothing, say so plainly and suggest an \
 alternative (broaden the query, try a different tag, list all notes).
+5a. AUTO-CLEANUP. Notes are automatically deleted once their date is in the \
+past — only today's and future notes are kept. If the user asks where an old \
+note went, explain this. This cleanup is automatic; you never call delete_note \
+for it.
 6. Be concise and conversational. Confirm what you did, including the note id.
 7. For summarise / compare / contradiction questions, call search_notes with \
 include_body=true and reason over the returned notes."""
@@ -89,6 +93,7 @@ class ToolCallRecord:
 class AgentTurn:
     reply: str
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    purged: list = field(default_factory=list)  # notes auto-removed because their date passed
 
     def called(self, name: str) -> list[ToolCallRecord]:
         return [tc for tc in self.tool_calls if tc.name == name]
@@ -105,8 +110,25 @@ class NoteAgent:
             known_tags=", ".join(known) if known else "(none yet)",
         )
         self.messages: list[dict] = [{"role": "system", "content": prompt}]
+        # Sweep out notes whose date already passed, once, when the agent starts.
+        self.purged_on_start = self.executor.store.purge_past_notes()
+
+    def _purge(self) -> list:
+        """Remove notes whose event_date is now in the past; tell the model so it
+        can mention it if relevant."""
+        purged = self.executor.store.purge_past_notes()
+        if purged:
+            listing = "; ".join(f'#{n.id} "{n.title}" ({n.event_date})' for n in purged)
+            self.messages.append({
+                "role": "system",
+                "content": (f"{len(purged)} note(s) were automatically removed because "
+                            f"their date has passed: {listing}. Mention this to the user "
+                            f"if it is relevant to their message."),
+            })
+        return purged
 
     def send(self, user_text: str) -> AgentTurn:
+        purged = self._purge()
         self.messages.append({"role": "user", "content": user_text})
         made: list[ToolCallRecord] = []
 
@@ -116,7 +138,7 @@ class NoteAgent:
 
             tool_calls = getattr(msg, "tool_calls", None)
             if not tool_calls:
-                return AgentTurn(reply=msg.content or "", tool_calls=made)
+                return AgentTurn(reply=msg.content or "", tool_calls=made, purged=purged)
 
             for call in tool_calls:
                 try:
@@ -138,7 +160,7 @@ class NoteAgent:
         })
         msg = self.llm.complete(self.messages)
         self.messages.append({"role": "assistant", "content": msg.content or ""})
-        return AgentTurn(reply=msg.content or "", tool_calls=made)
+        return AgentTurn(reply=msg.content or "", tool_calls=made, purged=purged)
 
     @staticmethod
     def _msg_to_dict(msg) -> dict:

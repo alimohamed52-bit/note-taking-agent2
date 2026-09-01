@@ -45,6 +45,10 @@ if "agent" not in st.session_state or st.session_state.get("user_id") != user_id
 
 st.title("🗒️ Note-Taking Agent")
 
+# Notes are kept only for today and the future; sweep out any that have passed.
+for _n in store.purge_past_notes():
+    st.toast(f"Auto-removed past note: {_n.title} ({_n.event_date})")
+
 with st.sidebar:
     st.subheader("Your notes")
     for n in store.all_notes(user_id):

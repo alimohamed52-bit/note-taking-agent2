@@ -65,6 +65,19 @@ SCENARIOS: list[Scenario] = [
                c.reply_contains_any("past", "today or later", "can't", "cannot", "future")])],
     ),
     Scenario(
+        "autopurge_past_notes", "cleanup",
+        [Turn("what notes do I have?",
+              [c.db_count(1),
+               c.db_no_note_matches(_has("dentist"), desc="yesterday's note auto-removed"),
+               c.reply_contains_any("grocer")])],
+        seed=[
+            {"title": "Dentist appointment", "body": "routine checkup",
+             "tags": ["health"], "event_date": YESTERDAY},
+            {"title": "Groceries", "body": "milk and eggs",
+             "tags": ["home"], "event_date": TODAY},
+        ],
+    ),
+    Scenario(
         "multiturn_append", "multi-turn",
         [
             Turn("Save a note titled 'Q3 planning', for today, about drafting the roadmap.",

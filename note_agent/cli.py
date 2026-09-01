@@ -45,6 +45,7 @@ def main(argv=None) -> int:
 
     agent = NoteAgent(store, llm=llm, user_id=args.user)
     print(BANNER)
+    _report_purged(agent.purged_on_start)
 
     while True:
         try:
@@ -60,6 +61,7 @@ def main(argv=None) -> int:
         if text == "/reset":
             agent = NoteAgent(store, llm=llm, user_id=args.user)
             print("(conversation reset)\n")
+            _report_purged(agent.purged_on_start)
             continue
         if text == "/notes":
             for n in store.all_notes(args.user):
@@ -74,6 +76,7 @@ def main(argv=None) -> int:
             print(f"agent › (error: {exc})\n")
             continue
 
+        _report_purged(turn.purged)
         for tc in turn.tool_calls:
             print(f"      · {tc.name}({_fmt_args(tc.arguments)}) -> {tc.result.get('status')}")
         print(f"agent › {turn.reply}\n")
@@ -84,6 +87,13 @@ def main(argv=None) -> int:
 
 def _fmt_args(args: dict) -> str:
     return ", ".join(f"{k}={v!r}" for k, v in args.items())
+
+
+def _report_purged(purged) -> None:
+    for n in purged or []:
+        print(f"      · auto-removed past note [{n.id}] {n.title} ({n.event_date})")
+    if purged:
+        print()
 
 
 if __name__ == "__main__":
