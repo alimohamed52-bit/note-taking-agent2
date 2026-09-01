@@ -25,6 +25,8 @@ without a second call that the user's confirmation gates.
 
 from __future__ import annotations
 
+from datetime import date
+
 from .storage import NoteStore, _normalise_tags
 
 # ---------------------------------------------------------------- JSON schemas
@@ -37,7 +39,9 @@ TOOL_SCHEMAS = [
             "description": (
                 "Create a new note. Use when the user wants to save, jot, record, "
                 "or remember something. Extract a short descriptive title even if "
-                "the user only gives a body."
+                "the user only gives a body. Every note requires `date`: if the "
+                "user did not state or imply one, ASK them first — do not call "
+                "this tool without it."
             ),
             "parameters": {
                 "type": "object",
@@ -49,8 +53,16 @@ TOOL_SCHEMAS = [
                         "items": {"type": "string"},
                         "description": "Optional lowercase tags/categories, e.g. ['meetings'].",
                     },
+                    "date": {
+                        "type": "string",
+                        "description": (
+                            "Required. The date the note is for, as YYYY-MM-DD, "
+                            "resolved from the calendar in the system prompt. Must "
+                            "be today or later — past dates are rejected."
+                        ),
+                    },
                 },
-                "required": ["title"],
+                "required": ["title", "date"],
             },
         },
     },
@@ -140,6 +152,7 @@ TOOL_SCHEMAS = [
                     "append_body": {"type": "string", "description": "Append a line to the body (not significant)."},
                     "add_tags": {"type": "array", "items": {"type": "string"}, "description": "Tags to add (not significant)."},
                     "remove_tags": {"type": "array", "items": {"type": "string"}, "description": "Tags to remove (significant)."},
+                    "date": {"type": "string", "description": "Set/replace the note's date, YYYY-MM-DD. Must be today or later (not significant)."},
                     "confirm": {"type": "boolean", "description": "Set true to apply a significant change after user confirmation."},
                 },
                 "required": ["note_id"],
@@ -166,6 +179,18 @@ TOOL_SCHEMAS = [
         },
     },
 ]
+
+
+def _check_date(value: str) -> str | None:
+    """Return an error message if `value` is not a valid, non-past YYYY-MM-DD."""
+    try:
+        parsed = date.fromisoformat(value.strip())
+    except (ValueError, AttributeError):
+        return f"'{value}' is not a valid date. Use YYYY-MM-DD."
+    if parsed < date.today():
+        return (f"{parsed.isoformat()} is in the past. Notes can only be dated "
+                f"today ({date.today().isoformat()}) or later.")
+    return None
 
 
 def _significant(args: dict) -> bool:
@@ -196,9 +221,19 @@ class ToolExecutor:
     def _create_note(self, a: dict) -> dict:
         if not a.get("title"):
             return {"status": "error", "message": "title is required"}
+        if not a.get("date"):
+            return {
+                "status": "date_required",
+                "message": ("No date was provided. Ask the user which date this "
+                            "note is for (today or a future date) before saving."),
+            }
+        date_error = _check_date(a["date"])
+        if date_error:
+            return {"status": "error", "message": date_error + " Ask the user for a valid date."}
+
         note = self.store.add_note(
             title=a["title"], body=a.get("body", ""), tags=a.get("tags"),
-            user_id=self.user_id,
+            user_id=self.user_id, event_date=a["date"].strip(),
         )
         return {"status": "ok", "note": note.to_dict()}
 
@@ -245,6 +280,11 @@ class ToolExecutor:
         if note is None:
             return {"status": "not_found", "note_id": note_id}
 
+        if a.get("date"):
+            date_error = _check_date(a["date"])
+            if date_error:
+                return {"status": "error", "message": date_error + " Ask the user for a valid date."}
+
         if _significant(a) and not a.get("confirm"):
             preview = {"current": note.to_dict()}
             if a.get("title") is not None:
@@ -264,7 +304,9 @@ class ToolExecutor:
         updated = self.store.update_note(
             note_id, title=a.get("title"), body=a.get("body"),
             append_body=a.get("append_body"), add_tags=a.get("add_tags"),
-            remove_tags=a.get("remove_tags"), user_id=self.user_id,
+            remove_tags=a.get("remove_tags"),
+            event_date=a["date"].strip() if a.get("date") else None,
+            user_id=self.user_id,
         )
         return {"status": "ok", "note": updated.to_dict()}
 

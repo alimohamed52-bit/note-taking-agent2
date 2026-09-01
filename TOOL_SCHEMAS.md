@@ -20,16 +20,22 @@ human-readable contract.
 - **Confirmation is scoped to real risk.** Appending text or adding a tag is
   reversible and low-stakes, so it applies immediately. Replacing the body,
   changing the title, or removing tags is "significant" and gated.
+- **Every note is dated, and never in the past.** `create_note` requires
+  `date`; a missing date returns `date_required` (the agent asks the user) and a
+  past date returns `error`. Enforced in the tool, so the rule holds even if the
+  model forgets it. The agent resolves relative dates ("Tuesday", "next week")
+  from an explicit calendar injected into its system prompt.
 
 ## Common return fields
 
 | Field | Type | Meaning |
 |---|---|---|
-| `status` | string | `ok` · `not_found` · `confirmation_required` · `error` |
-| `note` | object | `{id, title, body, tags[], created_at, updated_at}` |
-| `message` | string | present on `error` / `confirmation_required` |
+| `status` | string | `ok` · `not_found` · `confirmation_required` · `date_required` · `error` |
+| `note` | object | `{id, title, body, tags[], event_date, created_at, updated_at}` |
+| `message` | string | present on `error` / `confirmation_required` / `date_required` |
 
-Timestamps are UTC ISO-8601. Tags are always stored lowercase, de-duplicated,
+Timestamps are UTC ISO-8601. `event_date` is the `YYYY-MM-DD` the note is *for*
+(distinct from `created_at`). Tags are always stored lowercase, de-duplicated,
 `#` stripped.
 
 ---
@@ -41,10 +47,14 @@ Create a new note.
 | Param | Type | Req | Notes |
 |---|---|---|---|
 | `title` | string | ✓ | Short descriptive title. The model infers one if the user only dictates a body. |
+| `date` | string | ✓ | `YYYY-MM-DD` the note is for, resolved from the calendar in the system prompt. Must be **today or later**. |
 | `body` | string | | Full text. May be empty. |
-| `tags` | string[] | | Categories/labels. |
+| `tags` | string[] | | Categories/labels. The agent infers 1–3 from content when the user gives none. |
 
-**Returns:** `{status: "ok", note}`.
+**Returns:**
+- `{status: "ok", note}` on success
+- `{status: "date_required", message}` if `date` is missing — the agent must ask the user for one
+- `{status: "error", message}` if `date` is malformed or in the past
 
 ## `search_notes`
 
@@ -98,6 +108,7 @@ Modify a note by id.
 | `append_body` | string | | no (adds a line) |
 | `add_tags` | string[] | | no |
 | `remove_tags` | string[] | | **yes** |
+| `date` | string | | no — set/replace `event_date` (`YYYY-MM-DD`, today or later) |
 | `confirm` | boolean | | set `true` to apply a significant change |
 
 **Returns:**

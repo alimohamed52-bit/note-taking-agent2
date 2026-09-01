@@ -50,8 +50,9 @@ def _notes_payload() -> list[dict]:
     store = _store()
     try:
         return [
-            {"id": n.id, "title": n.title, "tags": n.tags,
-             "body": n.body, "created_at": n.created_at[:16].replace("T", " ")}
+            {"id": n.id, "title": n.title, "tags": n.tags, "body": n.body,
+             "event_date": n.event_date,
+             "created_at": n.created_at[:16].replace("T", " ")}
             for n in store.all_notes(app.config["USER_ID"])
         ]
     finally:
@@ -157,7 +158,7 @@ function renderNotes(notes) {
   if (!notes.length) { box.innerHTML = '<div class="empty">No notes yet.</div>'; return; }
   box.innerHTML = notes.map(n =>
     `<div class="note"><b>#${n.id} ${escapeHtml(n.title)}</b>
-     <div class="m">${n.created_at}</div>
+     <div class="m">${n.event_date ? '📅 ' + escapeHtml(n.event_date) : n.created_at}</div>
      ${n.tags.map(t => `<span class="pill">${escapeHtml(t)}</span>`).join('')}</div>`
   ).join('');
 }
@@ -269,7 +270,7 @@ def note_page(note_id: int):
         <title>{html.escape(note.title)}</title>
         <body style="font-family:system-ui;max-width:680px;margin:40px auto;padding:0 20px">
         <a href="/">← chat</a><h1>{html.escape(note.title)}</h1>
-        <p style="color:#888">#{note.id} · {note.created_at[:16].replace("T", " ")}</p>
+        <p style="color:#888">#{note.id}{" · 📅 " + html.escape(note.event_date) if note.event_date else ""} · created {note.created_at[:16].replace("T", " ")}</p>
         <p>{tags}</p><pre style="white-space:pre-wrap;font:inherit">{html.escape(note.body)}</pre>
         </body>"""
     finally:

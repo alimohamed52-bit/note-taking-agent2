@@ -48,7 +48,8 @@ st.title("🗒️ Note-Taking Agent")
 with st.sidebar:
     st.subheader("Your notes")
     for n in store.all_notes(user_id):
-        st.caption(f"[{n.id}] **{n.title}** " + " ".join(f"`#{t}`" for t in n.tags))
+        when = f"📅 {n.event_date} · " if n.event_date else ""
+        st.caption(f"[{n.id}] {when}**{n.title}** " + " ".join(f"`#{t}`" for t in n.tags))
 
 for role, content in st.session_state.history:
     with st.chat_message(role):

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS notes (
     tags        TEXT    NOT NULL DEFAULT '',   -- comma-separated, normalised
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL,
+    event_date  TEXT,                           -- YYYY-MM-DD the note is "for"
     embedding   BLOB                            -- float32 bytes, nullable
 );
 CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
@@ -77,12 +78,14 @@ class Note:
     tags: list[str] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
+    event_date: str = ""
 
     def to_dict(self, include_body: bool = True) -> dict:
         d = {
             "id": self.id,
             "title": self.title,
             "tags": self.tags,
+            "event_date": self.event_date,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -102,7 +105,14 @@ class NoteStore:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a database was first created."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(notes)")}
+        if "event_date" not in cols:
+            self._conn.execute("ALTER TABLE notes ADD COLUMN event_date TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -117,6 +127,7 @@ class NoteStore:
             tags=[t for t in row["tags"].split(",") if t],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            event_date=(row["event_date"] or "") if "event_date" in row.keys() else "",
         )
 
     def _embedding_text(self, title: str, body: str, tags: list[str]) -> str:
@@ -128,16 +139,16 @@ class NoteStore:
 
     # --------------------------------------------------------------------- CRUD
     def add_note(self, title: str, body: str = "", tags=None,
-                 user_id: str = "default") -> Note:
+                 user_id: str = "default", event_date: str | None = None) -> Note:
         title = title.strip()
         body = (body or "").strip()
         tag_list = _normalise_tags(tags)
         ts = _now()
         emb = self._compute_embedding(title, body, tag_list)
         cur = self._conn.execute(
-            "INSERT INTO notes (user_id, title, body, tags, created_at, updated_at, embedding) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, title, body, ",".join(tag_list), ts, ts, emb),
+            "INSERT INTO notes (user_id, title, body, tags, created_at, updated_at, event_date, embedding) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, title, body, ",".join(tag_list), ts, ts, event_date or None, emb),
         )
         self._conn.commit()
         return self.get_note(cur.lastrowid, user_id)
@@ -163,12 +174,14 @@ class NoteStore:
         return sorted(tags)
 
     def update_note(self, note_id: int, *, title=None, body=None, append_body=None,
-                    add_tags=None, remove_tags=None, set_tags=None,
+                    add_tags=None, remove_tags=None, set_tags=None, event_date=None,
                     user_id: str = "default") -> Note | None:
         note = self.get_note(note_id, user_id)
         if note is None:
             return None
 
+        if event_date is not None:
+            note.event_date = event_date
         if title is not None:
             note.title = title.strip()
         if body is not None:
@@ -191,9 +204,10 @@ class NoteStore:
         ts = _now()
         emb = self._compute_embedding(note.title, note.body, note.tags)
         self._conn.execute(
-            "UPDATE notes SET title=?, body=?, tags=?, updated_at=?, embedding=? "
+            "UPDATE notes SET title=?, body=?, tags=?, event_date=?, updated_at=?, embedding=? "
             "WHERE id=? AND user_id=?",
-            (note.title, note.body, ",".join(note.tags), ts, emb, note_id, user_id),
+            (note.title, note.body, ",".join(note.tags), note.event_date or None,
+             ts, emb, note_id, user_id),
         )
         self._conn.commit()
         return self.get_note(note_id, user_id)

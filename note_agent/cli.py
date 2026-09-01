@@ -63,7 +63,8 @@ def main(argv=None) -> int:
             continue
         if text == "/notes":
             for n in store.all_notes(args.user):
-                print(f"  [{n.id}] {n.title}  {', '.join('#' + t for t in n.tags)}")
+                when = f"({n.event_date}) " if n.event_date else ""
+                print(f"  [{n.id}] {when}{n.title}  {', '.join('#' + t for t in n.tags)}")
             print()
             continue
 

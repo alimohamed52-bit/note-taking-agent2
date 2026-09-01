@@ -87,7 +87,7 @@ conversation per server process, "Reset" starts a new one.
 
 ## Evaluation harness
 
-15 scripted conversational scenarios (happy paths + edge cases) run against a
+16 scripted conversational scenarios (happy paths + edge cases) run against a
 live agent, asserting on **which tool was called with which arguments**, the
 **resulting database state**, and whether the agent **asked for clarification**
 when it should have.
@@ -160,6 +160,7 @@ table; see [`note_agent/storage.py`](note_agent/storage.py).
 | **Multi-turn awareness** | Full message history is replayed each turn; tool results (with ids) stay in context so "that note" / "the second one" resolve. Verified by `multiturn_append`. |
 | **Graceful errors** | Empty searches return `count: 0`; the prompt requires saying so and suggesting an alternative. Tool exceptions are caught and returned as `status: "error"` so the loop survives. Verified by `search_empty_graceful`. |
 | **Reasoning over notes** | `search_notes(include_body=true)` returns full bodies; the model summarises / compares / finds contradictions. Verified by `summarise_by_tag`, `detect_contradiction`. |
+| **Every note is dated** | `create_note` requires a `date` (stored as `event_date`). No date in the message → the agent asks and does not save yet (`add_no_date_asks`). A date before today is rejected by `tools.py` regardless of the model (`add_rejects_past_date`). The agent resolves relative dates from an explicit calendar in its system prompt, never by computing weekdays itself. |
 
 ### LLM: Groq
 

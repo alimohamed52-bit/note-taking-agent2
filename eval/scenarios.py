@@ -1,4 +1,4 @@
-"""15 conversational scenarios: happy paths + edge cases.
+"""Conversational scenarios: happy paths + edge cases.
 
 Each Scenario seeds a fresh database, then plays its turns through a real agent.
 `checks` on a turn are evaluated after that turn completes.
@@ -7,9 +7,14 @@ Each Scenario seeds a fresh database, then plays its turns through a real agent.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Callable
 
 from . import checks as c
+
+TODAY = date.today().isoformat()
+TOMORROW = (date.today() + timedelta(days=1)).isoformat()
+YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
 
 
 @dataclass
@@ -34,23 +39,35 @@ SCENARIOS: list[Scenario] = [
     Scenario(
         "add_basic", "add",
         [Turn(
-            "Save a note about the team standup — we agreed to move it to Tuesdays, tag it as meetings.",
-            [c.tool_called("create_note", tags=["meetings"]),
+            "Save a note for today about the team standup — we agreed to move it "
+            "to Tuesdays, tag it as meetings.",
+            [c.tool_called("create_note", tags=["meetings"], date=TODAY),
              c.db_count(1),
-             c.db_note_matches(_has("tuesday"), desc="body mentions Tuesday")],
+             c.db_note_matches(_has("tuesday"), desc="body mentions Tuesday"),
+             c.db_note_matches(lambda n: n.event_date == TODAY, desc="dated today")],
         )],
     ),
     Scenario(
-        "add_minimal_title_inferred", "add",
-        [Turn(
-            "Remember that the wifi password at the office is hunter2green.",
-            [c.tool_called("create_note"), c.db_count(1)],
-        )],
+        "add_no_date_asks", "add",
+        [
+            Turn("Remember that the wifi password at the office is hunter2green.",
+                 [c.tool_not_called("create_note"),  # no date given -> must ask
+                  c.reply_is_question(),
+                  c.db_count(0)]),
+            Turn("it's for today",
+                 [c.tool_called("create_note", date=TODAY), c.db_count(1)]),
+        ],
+    ),
+    Scenario(
+        "add_rejects_past_date", "add",
+        [Turn("Log a note dated yesterday about the server outage.",
+              [c.db_count(0),  # past date must not be saved
+               c.reply_contains_any("past", "today or later", "can't", "cannot", "future")])],
     ),
     Scenario(
         "multiturn_append", "multi-turn",
         [
-            Turn("Save a note titled 'Q3 planning' about drafting the roadmap.",
+            Turn("Save a note titled 'Q3 planning', for today, about drafting the roadmap.",
                  [c.tool_called("create_note")]),
             Turn("Actually, add a deadline of September 15th to that last note.",
                  [c.tool_called("update_note", note_id=1),  # resolved "that last note"
