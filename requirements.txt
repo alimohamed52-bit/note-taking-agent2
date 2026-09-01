@@ -3,3 +3,4 @@ python-dotenv>=1.0.0
 numpy>=1.26.0
 fastembed>=0.3.6
 streamlit>=1.36.0
+flask>=3.0.0
